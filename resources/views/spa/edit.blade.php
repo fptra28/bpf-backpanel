@@ -51,8 +51,8 @@
 
             <div class="form-group">
                 <label for="specs">Spesifikasi</label>
-                <textarea class="form-control @error('specs') is-invalid @enderror" id="specs" name="specs"
-                    rows="8">{{ old('specs', $produk->specs) }}</textarea>
+                <textarea class="form-control tinymce-editor @error('specs') is-invalid @enderror" id="specs"
+                    name="specs" rows="8">{{ old('specs', $produk->specs) }}</textarea>
                 @error('specs')
                 <div class="invalid-feedback">{{ $message }}</div>
                 @enderror
@@ -90,49 +90,67 @@
 </div>
 
 {{-- TinyMCE --}}
-<script src="https://cdn.tiny.cloud/1/zxbb8ss6iclrki0fopl5gcne91neckqc4e004atop3wf0mi2/tinymce/8/tinymce.min.js" referrerpolicy="origin" crossorigin="anonymous"></script>
+<script src="https://cdn.tiny.cloud/1/rijrac2uxn06a1q296snq7j1fi420fd29r3lc1o12yzq6fwv/tinymce/8/tinymce.min.js"
+    referrerpolicy="origin" crossorigin="anonymous"></script>
 <script>
     tinymce.init({
-        selector: '#specs',
-        height: 700,
-        plugins: `
-            print preview paste importcss searchreplace autolink autosave save directionality
-            code visualblocks visualchars fullscreen image link media template codesample table
-            charmap hr pagebreak nonbreaking anchor toc insertdatetime advlist lists wordcount
-            imagetools textpattern noneditable help charmap quickbars emoticons
-        `,
-        toolbar: `
-            undo redo | bold italic underline strikethrough | fontfamily fontsize blocks |
-            alignleft aligncenter alignright alignjustify | outdent indent | numlist bullist |
-            forecolor backcolor removeformat | pagebreak | charmap emoticons | fullscreen preview
-            save print | insertfile image media template link anchor codesample | ltr rtl | table
-        `,
-        menubar: 'file edit view insert format tools table help',
-        toolbar_mode: 'sliding',
-        quickbars_selection_toolbar: 'bold italic | quicklink h2 h3 blockquote quickimage quicktable',
-        image_advtab: true,
-        branding: false,
+        selector: '.tinymce-editor',
+        plugins: 'anchor autolink charmap codesample emoticons image link lists media searchreplace table visualblocks wordcount',
+        toolbar: 'undo redo | blocks fontfamily fontsize | bold italic underline strikethrough | link image media table | align lineheight | numlist bullist indent outdent | emoticons charmap | removeformat',
+        content_style: 'img{max-width:100%;height:auto;}',
+        relative_urls: false,
+        remove_script_host: false,
+        convert_urls: false,
+        document_base_url: '{{ url('/') }}/',
+        image_class_list: [{
+            title: 'Responsive',
+            value: 'img-fluid'
+        }, ],
+        setup: (editor) => {
+            const sync = () => editor.save();
+            editor.on('change input undo redo', sync);
+        },
+        images_upload_handler: (blobInfo, progress) => new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
 
-        // Aktifkan Table Toolbar Lengkap
-        table_toolbar: `
-            tableprops tabledelete | tableinsertrowbefore tableinsertrowafter tabledeleterow |
-            tableinsertcolbefore tableinsertcolafter tabledeletecol | tablecellprops tablemergecells
-        `,
+            xhr.open('POST', '{{ route('tinymce.upload') }}');
+            xhr.setRequestHeader('X-CSRF-TOKEN', '{{ csrf_token() }}');
+            xhr.withCredentials = true;
 
-        content_style: `
-            body { font-family:Helvetica,Arial,sans-serif; font-size:14px }
-            table { border-collapse: collapse; width: 100%; border: 1px solid #d1d5db; }
-            th, td { border: 1px solid #d1d5db; padding: 8px; text-align: center; }
-            th { background-color: #f3f4f6; font-weight: bold; }
-        `,
+            xhr.upload.onprogress = (e) => {
+                progress(e.loaded / e.total * 100);
+            };
 
-        setup: function (editor) {
-            editor.on('NodeChange', function (e) {
-                if (e && e.element.nodeName.toLowerCase() === 'table') {
-                    e.element.classList.add('table-auto', 'w-full', 'border', 'border-gray-300');
+            xhr.onload = () => {
+                if (xhr.status !== 200) {
+                    reject('HTTP Error: ' + xhr.status);
+                    return;
                 }
-            });
-        }
+
+                let json;
+                try {
+                    json = JSON.parse(xhr.responseText);
+                } catch (e) {
+                    reject('Invalid JSON: ' + xhr.responseText);
+                    return;
+                }
+
+                if (!json || typeof json.location !== 'string') {
+                    reject('Invalid response: ' + xhr.responseText);
+                    return;
+                }
+
+                resolve(json.location);
+            };
+
+            xhr.onerror = () => {
+                reject('Image upload failed due to a network error.');
+            };
+
+            const formData = new FormData();
+            formData.append('file', blobInfo.blob(), blobInfo.filename());
+            xhr.send(formData);
+        }),
     });
 
     document.getElementById('confirmSubmit').addEventListener('click', function() {
